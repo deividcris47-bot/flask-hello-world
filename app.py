@@ -15,44 +15,50 @@ def enviar_grafico_vip(precio):
     fig, ax = plt.subplots(figsize=(10,5))
     fig.patch.set_facecolor('black')
     ax.set_facecolor('black')
-    
     ax.plot(df['Close'], color='white', linewidth=1.5)
-    ax.axhline(PRECIO_ALERTA, color='#00FF00', linestyle='--', linewidth=2, label=f'ALERTA {PRECIO_ALERTA}')
+    ax.axhline(PRECIO_ALERTA, color='#00FF00', linestyle='--', linewidth=2)
     ax.axhline(PRECIO_ALERTA+10, color='red', linestyle='--', linewidth=1)
     ax.axhline(PRECIO_ALERTA-10, color='blue', linestyle='--', linewidth=1)
-    
-    ax.set_title(f'ORO (XAU/USD) - {precio:.2f} - TOCO 4515', color='white', fontsize=14, fontweight='bold')
+    ax.set_title(f'ORO {precio:.2f} - VIP', color='white')
     ax.tick_params(colors='white')
-    ax.legend()
-    
     buf = io.BytesIO()
     plt.savefig(buf, format='png', facecolor='black', bbox_inches='tight')
     buf.seek(0)
     plt.close()
-
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     files = {'photo': buf}
-    data = {'chat_id': CHANNEL_ID, 'caption': f'🔥 ALERTA VIP NEGRO\nPrecio tocó {PRECIO_ALERTA}\nActual: {precio:.2f}\n#ORO #VIP'}
-    requests.post(url, data=data, files=files)
+    data = {'chat_id': CHANNEL_ID, 'caption': f'🔥 GRAFICO VIP NEGRO\nPrecio: {precio:.2f}'}
+    r = requests.post(url, data=data, files=files)
+    print(r.text)
+    return r.text
+
+@app.route('/')
+def home():
+    return "Bot VIP ACTIVO <br><a href='/test'>CLICK AQUI PARA PROBAR GRAFICO</a>"
+
+@app.route('/test')
+def test():
+    try:
+        precio = yf.Ticker("GC=F").fast_info['last_price']
+        resultado = enviar_grafico_vip(precio)
+        return f"Enviado! Precio: {precio}<br>{resultado}"
+    except Exception as e:
+        return f"Error: {e}"
 
 def monitor():
-    enviado = False
+    enviado=False
     while True:
         try:
             precio = yf.Ticker("GC=F").fast_info['last_price']
             print(f"Precio: {precio}")
             if precio >= PRECIO_ALERTA and not enviado:
                 enviar_grafico_vip(precio)
-                enviado = True
-            if precio < PRECIO_ALERTA - 20:
-                enviado = False
+                enviado=True
+            if precio < PRECIO_ALERTA-20:
+                enviado=False
         except Exception as e:
             print(e)
         time.sleep(60)
-
-@app.route('/')
-def home():
-    return "Bot VIP Negro ACTIVO - Esperando 4515..."
 
 threading.Thread(target=monitor, daemon=True).start()
 
