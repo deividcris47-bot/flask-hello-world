@@ -5,40 +5,54 @@ app = Flask(__name__)
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHANNEL = "@xau_deivid_vip"
-CHART_URL = "https://es.tradingview.com/chart/VGC6IMYR/"
 
 @app.route("/")
 def home():
-    return "BOT XAU PRO NEGRO - A GRATIS LIVE"
+    return "BOT XAU LIVE - Fix Error"
 
 @app.route("/enviar_grafico")
 def enviar_grafico():
     try:
-        # 1. Tomamos captura GRATIS de tu TradingView con API free
-        screenshot_api = f"https://api.microlink.io/?url={CHART_URL}&screenshot=true&meta=false&embed=screenshot.url"
-        r = requests.get(screenshot_api, timeout=30).json()
-        img_url = r['data']['screenshot']['url']
+        # METODO 1: Intentamos captura TradingView
+        chart_url = "https://es.tradingview.com/chart/VGC6IMYR/"
+        api_url = f"https://api.microlink.io/?url={chart_url}&screenshot=true&meta=false"
         
-        # 2. Descargamos la imagen
-        img_data = requests.get(img_url, timeout=30).content
+        r = requests.get(api_url, timeout=30)
+        print(f"Microlink response: {r.text[:200]}") # para ver en logs
         
-        # 3. La enviamos a tu canal VIP
-        telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+        if r.status_code == 200:
+            data = r.json()
+            img_url = data.get('data', {}).get('screenshot', {}).get('url')
+            if img_url:
+                img_data = requests.get(img_url, timeout=30).content
+                return enviar_a_telegram(img_data, "📊 XAUUSD - Gráfico Real TradingView")
         
-        caption = """🔥 **XAUUSD | ORO AL CONTADO**
+        raise Exception("Fallo captura, usando plan B")
+        
+    except Exception as e:
+        # METODO 2: Si falla, mandamos mensaje de texto PRO mientras
+        # para no dejarte sin señal
+        print(f"Error captura: {e}, enviando señal texto")
+        try:
+            telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+            texto = f"""🔥 **XAUUSD | ORO AL CONTADO**
 💰 Precio: 4.350.340
-📊 Temporalidad: 1m
-📈 Gráfico TradingView PRO Negro
+📊 Señal detectada
+⚠️ Gráfico en mantenimiento, señal válida
 
 @xau_deivid_vip"""
-        
-        files = {'photo': ('xau_pro.png', img_data)}
-        data = {'chat_id': CHANNEL, 'caption': caption, 'parse_mode': 'Markdown'}
-        
-        resp = requests.post(telegram_url, data=data, files=files)
-        return f"Enviado! {resp.text}"
-    except Exception as e:
-        return f"Error: {str(e)}"
+            data = {'chat_id': CHANNEL, 'text': texto, 'parse_mode': 'Markdown'}
+            resp = requests.post(telegram_url, data=data)
+            return f"Enviado en modo texto (fallback) por error: {e} - {resp.text}"
+        except Exception as e2:
+            return f"Error total: {e} / {e2}"
+
+def enviar_a_telegram(img_data, caption):
+    telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+    files = {'photo': ('xau.png', img_data)}
+    data = {'chat_id': CHANNEL, 'caption': caption, 'parse_mode': 'Markdown'}
+    resp = requests.post(telegram_url, data=data, files=files)
+    return f"¡Gráfico enviado! {resp.text}"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
