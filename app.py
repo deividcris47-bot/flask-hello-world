@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 from flask import Flask
 
 # --- CONFIG ---
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+TELEGRAM_TOKEN = os.getenv("8870473192:AAESM9ggyFPwx5n1trc7IV0GZijUkJzgxvw")
+CHAT_ID = os.getenv("-1004419307514")
 ENTRY_ZONE = 4515.0 # tu línea verde
 SL_ZONE = 4527.0 # tu línea roja
 
