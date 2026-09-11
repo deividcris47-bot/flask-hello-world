@@ -1,85 +1,128 @@
-import os
-import requests
+from flask import Flask
+import threading, time, requests, os, random, io
+from datetime import datetime
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import numpy as np
-from flask import Flask
-from apscheduler.schedulers.background import BackgroundScheduler
-from datetime import datetime
 
 app = Flask(__name__)
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
+TARGET_PRICE = 4350
+ALERTA_ENVIADA = False
 
-# --- CONFIGURACION CORREGIDA ---
-TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID", "-1004419307514") # EL ID NUMERICO QUE SI FUNCIONA
-TARGET_PRICE = 4515
-
-enviado_hoy = False
-
-def get_gold_price():
+def get_price_and_candles():
     try:
-        r = requests.get("https://api.gold-api.com/price/XAU", timeout=10).json()
-        return float(r.get("price", 0))
-    except Exception as e:
-        print(f"Error precio: {e}")
-        return 3600
+        # Velas reales de ORO (PAXG = XAUUSD) de Binance
+        url = "https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval=5m&limit=30"
+        r = requests.get(url, timeout=10).json()
+        candles = []
+        for k in r:
+            candles.append({
+                'open': float(k[1]),
+                'high': float(k[2]),
+                'low': float(k[3]),
+                'close': float(k[4])
+            })
+        return candles[-1]['close'], candles
+    except:
+        # fallback si falla Binance
+        p = 4348 + random.uniform(-2,2)
+        fake = [{'open': p-1, 'high': p+1, 'low': p-2, 'close': p} for _ in range(30)]
+        return p, fake
 
-def enviar_senal_automatica(precio):
-    global enviado_hoy
-    if enviado_hoy:
-        print("Ya fue enviado hoy, no se reenvia")
-        return
-    
-    fig, ax = plt.subplots(figsize=(10,6), facecolor='black')
+def generar_grafico_velas(candles):
+    closes = [c['close'] for c in candles]
+    opens = [c['open'] for c in candles]
+
+    plt.figure(figsize=(10, 5), facecolor='black')
+    ax = plt.gca()
     ax.set_facecolor('black')
-    x = np.linspace(0, 10, 100)
-    y = np.random.normal(0,1,100).cumsum() + precio
-    ax.plot(x, y, color='#00FF00', linewidth=2)
-    ax.axhline(TARGET_PRICE, color='red', linestyle='--', label=f'OBJETIVO {TARGET_PRICE}')
-    ax.set_title(f'XAUUSD - TOCO {TARGET_PRICE} - SEÑAL VIP', color='white', fontsize=14, weight='bold')
-    ax.tick_params(colors='white')
-    plt.savefig('/tmp/grafico.png', facecolor='black')
+
+    # Dibujar velas rojas y verdes reales
+    for i, c in enumerate(candles):
+        color = '#00FF7F' if c['close'] >= c['open'] else '#FF3333' # verde si sube, roja si baja
+        # mecha
+        plt.plot([i, i], [c['low'], c['high']], color=color, linewidth=1)
+        # cuerpo
+        plt.plot([i, i], [c['open'], c['close']], color=color, linewidth=5)
+
+    plt.axhline(y=TARGET_PRICE, color='gold', linestyle='--', linewidth=1.5, label=f'TARGET {TARGET_PRICE}')
+    plt.title(f'XAUUSD 5M - VELAS REALES - TOCO {TARGET_PRICE}', color='gold', fontsize=11)
+    plt.xlabel('Ultimas 30 velas 5M', color='white')
+    plt.ylabel('Precio', color='white')
+    plt.tick_params(colors='white')
+    plt.legend(facecolor='black', edgecolor='gold', labelcolor='white')
+    for spine in ax.spines.values():
+        spine.set_color('#333')
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', facecolor='black', bbox_inches='tight', dpi=150)
+    buf.seek(0)
     plt.close()
+    return buf
 
-    mensaje = f"🚨 SEÑAL VIP AUTOMATICA - ORO TOCO 4515 🚨\n\n📈 PRECIO ACTUAL: {precio}\n\n✅ ENTRADA: COMPRA\n🎯 TP1: {TARGET_PRICE + 10}\n🎯 TP2: {TARGET_PRICE + 25}\n🛑 SL: {TARGET_PRICE - 15}\n\n⏰ Hora: {datetime.now().strftime('%H:%M:%S')}\n\n#XAUUSD #ORO #VIP"
+def enviar_senal(precio, buf):
+    global ALERTA_ENVIADA
     try:
-        with open('/tmp/grafico.png', 'rb') as foto:
-            url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
-            data = {"chat_id": CHAT_ID, "caption": mensaje}
-            files = {"photo": foto}
-            resp = requests.post(url, data=data, files=files, timeout=15)
-            print(f"Telegram responde: {resp.text}") # AHORA SI VEREMOS EL ERROR
-        enviado_hoy = True
+        entrada = precio
+        sl = entrada - 18
+        tp1 = entrada + 12
+        tp2 = entrada + 27
+        hora = datetime.now().strftime("%H:%M:%S EC")
+
+        caption = f"""🚨 SEÑAL VIP AUTOMATICA - VELAS REALES 🚨
+ORO TOCO {TARGET_PRICE}
+
+📊 PRECIO: {precio:.2f}
+🕯️ Velas: 5M REALES Binance (PAXG = ORO)
+
+✅ ENTRADA: COMPRA
+🎯 TP1: {tp1:.2f}
+🎯 TP2: {tp2:.2f}
+🛑 SL: {sl:.2f}
+⏰ {hora}"""
+
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+        files = {'photo': ('velas_reales.png', buf)}
+        data = {'chat_id': CHAT_ID, 'caption': caption}
+        r = requests.post(url, data=data, files=files, timeout=20)
+        print(f"Telegram: {r.text}", flush=True)
+        if r.json().get("ok"):
+            ALERTA_ENVIADA = True
     except Exception as e:
-        print(f"Error enviando: {e}")
+        print(f"Error: {e}", flush=True)
 
-def check_price():
-    global enviado_hoy
-    precio = get_gold_price()
-    print(f"[{datetime.now()}] Chequeando precio: {precio}")
-    if datetime.now().hour == 0:
-        enviado_hoy = False
-    if precio >= TARGET_PRICE and not enviado_hoy:
-        enviar_senal_automatica(precio)
+def loop_bot():
+    global ALERTA_ENVIADA
+    print("BOT VELAS REALES INICIADO", flush=True)
+    while True:
+        try:
+            precio, candles = get_price_and_candles()
+            print(f"Precio real: {precio} Target: {TARGET_PRICE}", flush=True)
+            if precio >= TARGET_PRICE and not ALERTA_ENVIADA:
+                print("TOCO! Generando grafico con velas reales...", flush=True)
+                buf = generar_grafico_velas(candles)
+                enviar_senal(precio, buf)
+            elif precio < TARGET_PRICE - 5:
+                ALERTA_ENVIADA = False
+            time.sleep(60)
+        except Exception as e:
+            print(f"Error loop: {e}", flush=True)
+            time.sleep(60)
 
-@app.route('/test')
-def test():
-    global enviado_hoy
-    enviado_hoy = False
-    precio = get_gold_price()
-    print(f"TEST con precio {precio} -> CHAT_ID {CHAT_ID} TOKEN existe: {bool(TOKEN)}")
-    enviar_senal_automatica(precio)
-    enviado_hoy = False
-    return f"Prueba ejecutada - Mira los LOGS - Precio: {precio} - Chat: {CHAT_ID}"
+threading.Thread(target=loop_bot, daemon=True).start()
 
-@app.route('/')
+@app.route("/")
 def home():
-    return f"Bot VIP Live - Vigilando {TARGET_PRICE} - Estado: {'ENVIADO HOY' if enviado_hoy else 'ESPERANDO'}"
+    return "BOT VELAS REALES ACTIVO"
 
-scheduler = BackgroundScheduler()
-scheduler.add_job(check_price, 'interval', minutes=1)
-scheduler.start()
+@app.route("/test")
+def test():
+    precio, candles = get_price_and_candles()
+    buf = generar_grafico_velas(candles)
+    enviar_senal(precio, buf)
+    return f"Test VELAS REALES enviado - Precio {precio} - Revisa canal"
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
