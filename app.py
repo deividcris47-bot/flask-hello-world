@@ -9,10 +9,8 @@ matplotlib.use('Agg')
 
 app = Flask(__name__)
 
-# --- PEGA AQUI TUS DATOS ---
-BOT_TOKEN = "AQUI_TU_TOKEN"
-CHAT_ID = "AQUI_TU_CHAT_ID"
-# ---------------------------
+BOT_TOKEN = "8228872094:AAE7c1v4a3h2e4dP8s6Xv1q2w3e4r5t6y7u8"
+CHAT_ID = "@TU_CANAL_AQUI"
 
 @app.route('/')
 def home():
@@ -21,26 +19,30 @@ def home():
 @app.route('/enviar_grafico')
 def enviar_grafico():
     try:
-        # Datos ORO 15m
-        df = yf.download("GC=F", period="1d", interval="15m", auto_adjust=True)
-        df = df.tail(50) # ultimas 50 velas
+        df = yf.download("GC=F", period="2d", interval="30m", auto_adjust=True, progress=False)
+        
+        # FIX DEFINITIVO PARA YAHOO NUEVO
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        
+        df = df.dropna()
+        df = df.tail(60)
 
-        # Crear grafico de velas
         buf = BytesIO()
-        mpf.plot(df, type='candle', style='yahoo', 
+        mpf.plot(df, type='candle', style='yahoo',
                  title='XAUUSD ORO - 30M VIP',
-                 ylabel='Precio',
+                 ylabel='Precio USD',
                  figsize=(10,6),
-                 savefig=dict(fname=buf, dpi=120, bbox_inches='tight'))
+                 savefig=dict(fname=buf, dpi=150, bbox_inches='tight'))
         buf.seek(0)
 
-        # Enviar a Telegram
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
         files = {'photo': ('oro_velas.png', buf, 'image/png')}
-        data = {'chat_id': CHAT_ID, 'caption': '🔥 ORO VIP - VELAS JAPONESAS 30M\n\nTendencia: Alcista/Bajista\nSoporte y Resistencia\n\nProxima en 30 min ⏰'}
-        
+        data = {'chat_id': CHAT_ID, 'caption': '🔥 ORO VIP - VELAS JAPONESAS 30M\n\nAnalisis Pro Activado\nProxima en 30 min'}
+
         r = requests.post(url, files=files, data=data)
         return f"Enviado OK: {r.text}"
+        
     except Exception as e:
         return f"Error: {e}"
 
