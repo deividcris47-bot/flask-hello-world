@@ -1,75 +1,71 @@
-import os, time, requests, yfinance as yf, pandas as pd
-import matplotlib
-matplotlib.use('Agg')
-import mplfinance as mpf
-from flask import Flask
-from threading import Thread
+import os, io, requests
+import pandas as pd
+import matplotlib.pyplot as plt
+from PIL import Image, ImageDraw
 
-app = Flask(__name__)
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHANNEL_ID = os.environ.get("CHANNEL_ID")
-TP1, TP2, TP3 = 4480, 4366, 4250
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
-@app.route('/')
-def home(): return "BOT VELAS FIX FINAL"
-@app.route('/healthz')
-def healthz(): return "OK", 200
+def crear_imagen_vip_modelo(df, entry, sl, tp1, tp2, tp3):
+    # CONFIGURACIÓN DE COLORES QUE PEDISTE
+    # Verde = Entrada, Roja = SL, Azul = TPs
+    plt.style.use('dark_background')
+    fig, ax = plt.subplots(figsize=(12, 6), facecolor='#121212')
+    ax.set_facecolor('#121212')
 
-def get_df(period, interval):
-    df = yf.download("GC=F", period=period, interval=interval, progress=False, auto_adjust=True)
-    if df.empty:
-        return df
-    # FIX DEFINITIVO para el error de Open
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    df = df[['Open','High','Low','Close']].copy()
-    df = df.apply(pd.to_numeric, errors='coerce')
-    df = df.dropna()
-    return df
+    # --- VELAS REALES ---
+    # df debe tener: open, high, low, close
+    for i in range(len(df)):
+        c = df['close'].iloc[i]
+        o = df['open'].iloc[i]
+        h = df['high'].iloc[i]
+        l = df['low'].iloc[i]
+        color = '#00e676' if c >= o else '#ff1744' # Verde y rojo trading
+        ax.plot([i, i], [l, h], color=color, lw=1)
+        ax.plot([i, i], [o, c], color=color, lw=4, solid_capstyle='round')
 
-def get_precio():
-    df = get_df("1d", "1m")
-    return float(df['Close'].iloc[-1])
+    # --- LINEAS ---
+    ax.axhline(entry, color='#00e676', ls='--', lw=1.5) # VERDE ENTRADA
+    ax.axhline(sl, color='#ff1744', ls='--', lw=1.2) # ROJA SL
+    ax.axhline(tp1, color='#29b6f6', ls=':', lw=1.2) # AZUL TP1
+    ax.axhline(tp2, color='#29b6f6', ls=':', lw=1.2) # AZUL TP2
+    ax.axhline(tp3, color='#29b6f6', ls=':', lw=1.2) # AZUL TP3
 
-def enviar_foto(texto, path):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-    with open(path, 'rb') as f:
-        data = {"chat_id": CHANNEL_ID, "caption": texto, "parse_mode": "Markdown"}
-        r = requests.post(url, data=data, files={"photo": f}, timeout=30)
-        print(f"Telegram: {r.text[:200]}", flush=True)
+    # Etiquetas tipo TradingView
+    ax.text(len(df)*1.01, entry, f' Entry : {entry} ', backgroundcolor='#00e676', color='black', fontsize=9, fontweight='bold', va='center')
+    ax.text(len(df)*1.01, sl, f' Stop loss : {sl} ', backgroundcolor='#424242', color='white', fontsize=9, va='center')
+    ax.text(len(df)*1.01, tp1, f' TP 1 : {tp1} ', backgroundcolor='#0288d1', color='white', fontsize=9, va='center')
+    ax.text(len(df)*1.01, tp2, f' TP 2 : {tp2} ', backgroundcolor='#0288d1', color='white', fontsize=9, va='center')
+    ax.text(len(df)*1.01, tp3, f' TP 3 : {tp3} ', backgroundcolor='#0288d1', color='white', fontsize=9, va='center')
 
-def generar_grafico_velas(entry):
-    df = get_df("2d", "30m").tail(80)
-    mc = mpf.make_marketcolors(up='#00ff88', down='#ff3b3b', wick={'up':'#00ff88','down':'#ff3b3b'}, edge='inherit')
-    s = mpf.make_mpf_style(marketcolors=mc, base_mpf_style='nightclouds', facecolor='#121212', figcolor='#121212', gridcolor='#2a2a2a')
-    sl = entry + 12
-    hlines = dict(hlines=[entry, sl, TP1, TP2, TP3], colors=['#00ff88','#ff3b3b','#00bfff','#00bfff','#ffcc00'], linestyle=['--','--','-','-','-'], linewidths=[1.5,1.5,1,1,2.5])
-    path = "/tmp/sniper_velas.png"
-    mpf.plot(df, type='candle', style=s, title=f'XAUUSD SELL {entry:.1f} -> TP3 {TP3}', hlines=hlines, figsize=(12,6), savefig=dict(fname=path, dpi=150, bbox_inches='tight'))
-    return path
+    plt.axis('off')
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=250, bbox_inches='tight', facecolor='#121212')
+    plt.close()
+    buf.seek(0)
+    return buf
 
-def bot_oro():
-    print(">>> BOT VELAS FIX FINAL INICIADO - SIN ERROR OPEN <<<", flush=True)
-    time.sleep(5)
-    try:
-        path = generar_grafico_velas(4515)
-        enviar_foto("✅ *Bot 5 VELAS ROJAS Y VERDES CONECTADO*\nAhora si con velas reales, ya sin error", path)
-    except Exception as e:
-        print(f"Error inicio: {e}", flush=True)
-    while True:
-        try:
-            precio = get_precio()
-            print(f"Precio XAU: {precio}", flush=True)
-            if 4508 <= precio <= 4525:
-                entry = precio
-                texto = f"🎯 *SNIPER SELL XAUUSD*\n\n*ENTRY:* `{entry:.2f}`\n*SL:* `{entry+12:.2f}`\n*TP1:* `{TP1}`\n*TP2:* `{TP2}`\n*TP3:* `{TP3}` *FINAL*\n\n📉 Velas rojas y verdes."
-                path = generar_grafico_velas(entry)
-                enviar_foto(texto, path)
-                time.sleep(3600)
-        except Exception as e:
-            print(f"Error loop: {e}", flush=True)
-        time.sleep(60)
+def enviar_telegram(imagen_buf, entry, sl, tp1, tp2, tp3):
+    # Texto tipo que te gustó
+    caption = f"""🔴 SELL XAUUSD · {entry} - {entry+5}
+#XAU_{entry}
 
-Thread(target=bot_oro, daemon=True).start()
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+SL {sl}
+TP1 {tp1}
+TP2 {tp2}
+TP3 {tp3}
+
+Ver gráfico"""
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    files = {'photo': ('signal.png', imagen_buf, 'image/png')}
+    data = {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}
+    requests.post(url, files=files, data=data)
+
+# EJEMPLO DE USO - aquí tu bot pone su lógica verde/roja
+# df = tu dataframe de XAUUSD 1m
+# entry = tu línea verde 4515.0
+# sl = tu línea roja 4527.0
+# tp1, tp2, tp3 = tus takes calculados
+# img = crear_imagen_vip_modelo(df, entry, sl, tp1, tp2, tp3)
+# enviar_telegram(img, entry, sl, tp1, tp2, tp3)
