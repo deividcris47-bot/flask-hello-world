@@ -3,3 +3,5 @@ yfinance
 mplfinance
 pandas
 requests
+matplotlib
+gunicorn
