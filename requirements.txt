@@ -1,3 +1,6 @@
-Flask==3.1.0
-requests==2.32.3
-gunicorn==22.0.0
+Flask
+requests
+matplotlib
+yfinance
+pandas
+gunicorn
