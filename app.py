@@ -9,7 +9,7 @@ matplotlib.use('Agg')
 
 app = Flask(__name__)
 
-BOT_TOKEN = "8228872094:AAE7c1v4a3h2e4dP8s6Xv1q2w3e4r5t6y7u8"
+BOT_TOKEN = "8870473192:AAElumHWfjg2paoljk1IANUvRW3dISms5eg"
 CHAT_ID = "@TU_CANAL_AQUI"
 
 @app.route('/')
