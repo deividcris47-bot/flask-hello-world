@@ -7,32 +7,41 @@ import yfinance as yf
 from flask import Flask
 from datetime import datetime
 import io
+import pandas as pd
 
 app = Flask(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") # tu @xau_deivid_vip o ID -100xxx
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 def get_xau_data():
     try:
-        # Precio real Oro
-        data = yf.download("GC=F", period="1d", interval="5m", progress=False)
+        data = yf.download("GC=F", period="1d", interval="5m", progress=False, auto_adjust=True)
         if data.empty:
-            data = yf.download("XAUUSD=X", period="1d", interval="5m", progress=False)
-        return data['Close'].tail(100)
-    except:
+            data = yf.download("XAUUSD=X", period="1d", interval="5m", progress=False, auto_adjust=True)
+        
+        if data.empty:
+            return None
+
+        close = data['Close']
+        # Si viene como DataFrame (yfinance nuevo) lo convertimos a Series
+        if isinstance(close, pd.DataFrame):
+            close = close.squeeze()
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+        return close.dropna().tail(100)
+    except Exception as e:
+        print(f"Error yf: {e}")
         return None
 
 def crear_grafico_pro():
     prices = get_xau_data()
-    if prices is None or len(prices) == 0:
-        # precio ejemplo si falla internet
-        import pandas as pd
-        prices = pd.Series([4348.5, 4349.2, 4350.34, 4349.8, 4351.1, 4350.5])
+    
+    if prices is None or len(prices) < 2:
+        prices = pd.Series([4348.5, 4349.2, 4350.34, 4349.8, 4351.1, 4350.5, 4352.1])
 
     last_price = float(prices.iloc[-1])
 
-    # ESTILO NEGRO PRO
     plt.style.use('dark_background')
     fig, ax = plt.subplots(figsize=(12, 6), facecolor='black')
     ax.set_facecolor('black')
@@ -40,10 +49,9 @@ def crear_grafico_pro():
     ax.plot(prices.values, color='#00ff88', linewidth=2.5)
     ax.fill_between(range(len(prices)), prices.values, alpha=0.15, color='#00ff88')
     
-    # Precio grande como tu foto
-    ax.text(0.02, 0.92, f'XAUUSD', color='gray', fontsize=14, transform=ax.transAxes, weight='bold')
-    ax.text(0.02, 0.80, f'{last_price:.2f}', color='white', fontsize=36, transform=ax.transAxes, weight='bold')
-    ax.text(0.02, 0.73, f'{datetime.now().strftime("%H:%M:%S")} UTC-5 | XAU_DEIVID_VIP', color='#00ff88', fontsize=10, transform=ax.transAxes)
+    ax.text(0.02, 0.92, f'XAUUSD / GOLD', color='gray', fontsize=14, transform=ax.transAxes, weight='bold')
+    ax.text(0.02, 0.80, f'{last_price:.2f}', color='white', fontsize=42, transform=ax.transAxes, weight='bold')
+    ax.text(0.02, 0.72, f'{datetime.now().strftime("%H:%M:%S")} UTC-5 | XAU_DEIVID_VIP', color='#00ff88', fontsize=11, transform=ax.transAxes)
 
     ax.grid(False)
     ax.set_xticks([])
@@ -59,7 +67,7 @@ def crear_grafico_pro():
 
 @app.route("/")
 def home():
-    return "Bot XAU DEIVID VIP LIVE - /enviar_grafico"
+    return "Bot XAU DEIVID VIP - LISTO"
 
 @app.route("/enviar_grafico")
 def enviar_grafico():
@@ -67,10 +75,10 @@ def enviar_grafico():
         imagen, precio = crear_grafico_pro()
         
         url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
-        caption = f"📊 XAUUSD - {precio:.2f}\n🔥 Señal PRO - {datetime.now().strftime('%H:%M')} \n👉 @xau_deivid_vip"
+        caption = f"📊 XAUUSD - {precio:.2f}\n🔥 Señal PRO - {datetime.now().strftime('%H:%M')}\n👉 @xau_deivid_vip"
 
         files = {'photo': ('xauusd.png', imagen, 'image/png')}
-        data = {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'Markdown'}
+        data = {'chat_id': CHAT_ID, 'caption': caption}
 
         r = requests.post(url, data=data, files=files, timeout=30)
         return r.json()
