@@ -1,8 +1,6 @@
 Flask
-requests
 yfinance
-pandas
+requests
 matplotlib
-lxml
-gunicorn
 mplfinance
+Pillow
