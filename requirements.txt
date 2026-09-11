@@ -1,6 +1,5 @@
 Flask
-requests
-matplotlib
 yfinance
+mplfinance
 pandas
-gunicorn
+requests
