@@ -1,2 +1,4 @@
-Flask
-Gunicorn
+flask
+yfinance
+pandas
+requests
