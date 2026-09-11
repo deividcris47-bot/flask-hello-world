@@ -1,8 +1,9 @@
 import os, requests, yfinance as yf, io, time, threading
 import matplotlib
 matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from flask import Flask
+import mplfinance as mpf
+import pandas as pd
+from flask import Flask, send_file
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
@@ -10,51 +11,91 @@ PRECIO_ALERTA = 4515
 
 app = Flask(__name__)
 
-def enviar_grafico_vip(precio):
-    df = yf.download("GC=F", period="1d", interval="5m")
-    fig, ax = plt.subplots(figsize=(10,5))
-    fig.patch.set_facecolor('black')
-    ax.set_facecolor('black')
-    ax.plot(df['Close'], color='white', linewidth=1.5)
-    ax.axhline(PRECIO_ALERTA, color='#00FF00', linestyle='--', linewidth=2)
-    ax.axhline(PRECIO_ALERTA+10, color='red', linestyle='--', linewidth=1)
-    ax.axhline(PRECIO_ALERTA-10, color='blue', linestyle='--', linewidth=1)
-    ax.set_title(f'ORO {precio:.2f} - VIP', color='white')
-    ax.tick_params(colors='white')
+# Estilo TradingView Negro
+s = mpf.make_mpf_style(
+    base_mpf_style='nightclouds',
+    facecolor='black',
+    edgecolor='white',
+    figcolor='black',
+    gridcolor='#222222',
+    gridstyle='--',
+    rc={'axes.labelcolor':'white', 'xtick.color':'white', 'ytick.color':'white'}
+)
+
+def crear_grafico_tradingview(precio_actual=None):
+    # Bajamos 2 dias en 15 min para que se vea bonito
+    df = yf.download("GC=F", period="3d", interval="15m")
+    df.index.name = 'Date'
+
+    # Niveles VIP
+    hlines = dict(hlines=[PRECIO_ALERTA, PRECIO_ALERTA+10, PRECIO_ALERTA-10, 4250],
+                  colors=['#00FF00','#FF0000','#00AAFF','#FFD700'],
+                  linewidths=[1.5,1,1,1],
+                  linestyle='--')
+
     buf = io.BytesIO()
-    plt.savefig(buf, format='png', facecolor='black', bbox_inches='tight')
+    fig, axlist = mpf.plot(df, type='candle', style=s,
+                           title=f'XAUUSD - ORO {precio_actual:.2f} - VIP DEIVID' if precio_actual else 'XAUUSD - ORO VIP DEIVID',
+                           ylabel='Precio',
+                           hlines=hlines,
+                           figratio=(16,9),
+                           figscale=1.2,
+                           returnfig=True)
+
+    # Texto Entry / SL / TP3
+    ax = axlist[0]
+    ax.text(0.02, 0.95, f'ENTRY SELL: {PRECIO_ALERTA}\nSL: {PRECIO_ALERTA+10}\nTP3: 4250',
+            transform=ax.transAxes, color='white', fontsize=9,
+            bbox=dict(facecolor='black', edgecolor='#00FF00', boxstyle='round'))
+
+    fig.savefig(buf, format='png', facecolor='black', bbox_inches='tight', dpi=150)
     buf.seek(0)
-    plt.close()
+    return buf
+
+def enviar_a_telegram(buf, precio):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     files = {'photo': buf}
-    data = {'chat_id': CHANNEL_ID, 'caption': f'🔥 GRAFICO VIP NEGRO\nPrecio: {precio:.2f}'}
-    r = requests.post(url, data=data, files=files)
-    print(r.text)
-    return r.text
+    data = {'chat_id': CHANNEL_ID, 'caption': f'🔥 XAUUSD SELL {PRECIO_ALERTA} -> TP3 4250\nPrecio actual: {precio:.2f}\n✅ Bot TradingView VIP ACTIVO'}
+    requests.post(url, data=data, files=files)
 
 @app.route('/')
 def home():
-    return "Bot VIP ACTIVO <br><a href='/test'>CLICK AQUI PARA PROBAR GRAFICO</a>"
+    return """
+    <body style='background:black;color:white;text-align:center;font-family:Arial'>
+    <h2>✅ Bot VIP TradingView ACTIVO - Esperando 4515</h2>
+    <p>Grafico en vivo (se actualiza cada vez que recargas):</p>
+    <img src='/chart' style='width:95%;max-width:900px;border:2px solid #00FF00'>
+    <br><br>
+    <a href='/chart' style='color:#00FF00'>Ver solo grafico</a> |
+    <a href='/test' style='color:yellow'>Probar envio a Telegram</a>
+    <p>Precio oro ahora: se chequea cada 60 seg</p>
+    </body>
+    """
+
+@app.route('/chart')
+def chart():
+    precio = float(yf.Ticker("GC=F").fast_info['last_price'])
+    buf = crear_grafico_tradingview(precio)
+    return send_file(buf, mimetype='image/png')
 
 @app.route('/test')
 def test():
-    try:
-        precio = yf.Ticker("GC=F").fast_info['last_price']
-        resultado = enviar_grafico_vip(precio)
-        return f"Enviado! Precio: {precio}<br>{resultado}"
-    except Exception as e:
-        return f"Error: {e}"
+    precio = float(yf.Ticker("GC=F").fast_info['last_price'])
+    buf = crear_grafico_tradingview(precio)
+    enviar_a_telegram(buf, precio)
+    return f"✅ Enviado a Telegram! Precio: {precio} - Revisa tu canal"
 
 def monitor():
     enviado=False
     while True:
         try:
-            precio = yf.Ticker("GC=F").fast_info['last_price']
+            precio = float(yf.Ticker("GC=F").fast_info['last_price'])
             print(f"Precio: {precio}")
             if precio >= PRECIO_ALERTA and not enviado:
-                enviar_grafico_vip(precio)
+                buf = crear_grafico_tradingview(precio)
+                enviar_a_telegram(buf, precio)
                 enviado=True
-            if precio < PRECIO_ALERTA-20:
+            if precio < PRECIO_ALERTA-15:
                 enviado=False
         except Exception as e:
             print(e)
