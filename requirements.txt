@@ -1,6 +1,4 @@
 Flask
-yfinance
 requests
 matplotlib
-mplfinance
-Pillow
+pandas
