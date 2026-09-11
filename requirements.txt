@@ -1,5 +1,7 @@
-flask
+Flask
+requests
 yfinance
 pandas
-requests
+matplotlib
+lxml
 gunicorn
