@@ -10,27 +10,27 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# --- CONFIGURA AQUI ---
-TOKEN = os.environ.get("TELEGRAM_TOKEN", "AQUI_TU_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID", "@xau_deivid_vip")
+# --- CONFIGURACION CORREGIDA ---
+TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID", "-1004419307514") # EL ID NUMERICO QUE SI FUNCIONA
 TARGET_PRICE = 4515
 
 enviado_hoy = False
 
 def get_gold_price():
     try:
-        # Precio oro en tiempo real
         r = requests.get("https://api.gold-api.com/price/XAU", timeout=10).json()
         return float(r.get("price", 0))
-    except:
-        return 3600  # fallback
+    except Exception as e:
+        print(f"Error precio: {e}")
+        return 3600
 
 def enviar_senal_automatica(precio):
     global enviado_hoy
     if enviado_hoy:
+        print("Ya fue enviado hoy, no se reenvia")
         return
     
-    # Crear grafico PRO negro
     fig, ax = plt.subplots(figsize=(10,6), facecolor='black')
     ax.set_facecolor('black')
     x = np.linspace(0, 10, 100)
@@ -42,28 +42,15 @@ def enviar_senal_automatica(precio):
     plt.savefig('/tmp/grafico.png', facecolor='black')
     plt.close()
 
-    mensaje = f"""🚨 **SEÑAL VIP AUTOMATICA - ORO TOCO 4515** 🚨
-
-📈 PRECIO ACTUAL: {precio}
-
-✅ ENTRADA: COMPRA
-🎯 TP1: {TARGET_PRICE + 10}
-🎯 TP2: {TARGET_PRICE + 25}
-🛑 SL: {TARGET_PRICE - 15}
-
-⚠️ Riesgo: 1% por operación
-⏰ Hora: {datetime.now().strftime('%H:%M:%S')}
-
-#XAUUSD #ORO #VIP @xau_deivid_vip
-"""
+    mensaje = f"🚨 SEÑAL VIP AUTOMATICA - ORO TOCO 4515 🚨\n\n📈 PRECIO ACTUAL: {precio}\n\n✅ ENTRADA: COMPRA\n🎯 TP1: {TARGET_PRICE + 10}\n🎯 TP2: {TARGET_PRICE + 25}\n🛑 SL: {TARGET_PRICE - 15}\n\n⏰ Hora: {datetime.now().strftime('%H:%M:%S')}\n\n#XAUUSD #ORO #VIP"
     try:
         with open('/tmp/grafico.png', 'rb') as foto:
             url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
-            data = {"chat_id": CHAT_ID, "caption": mensaje, "parse_mode": "Markdown"}
+            data = {"chat_id": CHAT_ID, "caption": mensaje}
             files = {"photo": foto}
-            requests.post(url, data=data, files=files, timeout=15)
+            resp = requests.post(url, data=data, files=files, timeout=15)
+            print(f"Telegram responde: {resp.text}") # AHORA SI VEREMOS EL ERROR
         enviado_hoy = True
-        print(f"✅ Señal enviada - Precio: {precio}")
     except Exception as e:
         print(f"Error enviando: {e}")
 
@@ -71,27 +58,25 @@ def check_price():
     global enviado_hoy
     precio = get_gold_price()
     print(f"[{datetime.now()}] Chequeando precio: {precio}")
-    
-    # Reset diario
     if datetime.now().hour == 0:
         enviado_hoy = False
-
     if precio >= TARGET_PRICE and not enviado_hoy:
         enviar_senal_automatica(precio)
 
-# Test manual
 @app.route('/test')
 def test():
-    enviar_senal_automatica(get_gold_price())
     global enviado_hoy
     enviado_hoy = False
-    return "Señal de prueba enviada a Telegram ✅"
+    precio = get_gold_price()
+    print(f"TEST con precio {precio} -> CHAT_ID {CHAT_ID} TOKEN existe: {bool(TOKEN)}")
+    enviar_senal_automatica(precio)
+    enviado_hoy = False
+    return f"Prueba ejecutada - Mira los LOGS - Precio: {precio} - Chat: {CHAT_ID}"
 
 @app.route('/')
 def home():
     return f"Bot VIP Live - Vigilando {TARGET_PRICE} - Estado: {'ENVIADO HOY' if enviado_hoy else 'ESPERANDO'}"
 
-# Iniciar el chequeo automatico cada 1 minuto
 scheduler = BackgroundScheduler()
 scheduler.add_job(check_price, 'interval', minutes=1)
 scheduler.start()
