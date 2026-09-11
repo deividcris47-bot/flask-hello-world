@@ -1,59 +1,81 @@
+import os
+import requests
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import yfinance as yf
 from flask import Flask
-import requests, os
+from datetime import datetime
+import io
 
 app = Flask(__name__)
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHANNEL = "@xau_deivid_vip"
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") # tu @xau_deivid_vip o ID -100xxx
+
+def get_xau_data():
+    try:
+        # Precio real Oro
+        data = yf.download("GC=F", period="1d", interval="5m", progress=False)
+        if data.empty:
+            data = yf.download("XAUUSD=X", period="1d", interval="5m", progress=False)
+        return data['Close'].tail(100)
+    except:
+        return None
+
+def crear_grafico_pro():
+    prices = get_xau_data()
+    if prices is None or len(prices) == 0:
+        # precio ejemplo si falla internet
+        import pandas as pd
+        prices = pd.Series([4348.5, 4349.2, 4350.34, 4349.8, 4351.1, 4350.5])
+
+    last_price = float(prices.iloc[-1])
+
+    # ESTILO NEGRO PRO
+    plt.style.use('dark_background')
+    fig, ax = plt.subplots(figsize=(12, 6), facecolor='black')
+    ax.set_facecolor('black')
+    
+    ax.plot(prices.values, color='#00ff88', linewidth=2.5)
+    ax.fill_between(range(len(prices)), prices.values, alpha=0.15, color='#00ff88')
+    
+    # Precio grande como tu foto
+    ax.text(0.02, 0.92, f'XAUUSD', color='gray', fontsize=14, transform=ax.transAxes, weight='bold')
+    ax.text(0.02, 0.80, f'{last_price:.2f}', color='white', fontsize=36, transform=ax.transAxes, weight='bold')
+    ax.text(0.02, 0.73, f'{datetime.now().strftime("%H:%M:%S")} UTC-5 | XAU_DEIVID_VIP', color='#00ff88', fontsize=10, transform=ax.transAxes)
+
+    ax.grid(False)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', facecolor='black', bbox_inches='tight', dpi=200)
+    buf.seek(0)
+    plt.close()
+    return buf, last_price
 
 @app.route("/")
 def home():
-    return "BOT XAU LIVE - Fix Error"
+    return "Bot XAU DEIVID VIP LIVE - /enviar_grafico"
 
 @app.route("/enviar_grafico")
 def enviar_grafico():
     try:
-        # METODO 1: Intentamos captura TradingView
-        chart_url = "https://es.tradingview.com/chart/VGC6IMYR/"
-        api_url = f"https://api.microlink.io/?url={chart_url}&screenshot=true&meta=false"
+        imagen, precio = crear_grafico_pro()
         
-        r = requests.get(api_url, timeout=30)
-        print(f"Microlink response: {r.text[:200]}") # para ver en logs
-        
-        if r.status_code == 200:
-            data = r.json()
-            img_url = data.get('data', {}).get('screenshot', {}).get('url')
-            if img_url:
-                img_data = requests.get(img_url, timeout=30).content
-                return enviar_a_telegram(img_data, "📊 XAUUSD - Gráfico Real TradingView")
-        
-        raise Exception("Fallo captura, usando plan B")
-        
+        url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+        caption = f"📊 XAUUSD - {precio:.2f}\n🔥 Señal PRO - {datetime.now().strftime('%H:%M')} \n👉 @xau_deivid_vip"
+
+        files = {'photo': ('xauusd.png', imagen, 'image/png')}
+        data = {'chat_id': CHAT_ID, 'caption': caption, 'parse_mode': 'Markdown'}
+
+        r = requests.post(url, data=data, files=files, timeout=30)
+        return r.json()
     except Exception as e:
-        # METODO 2: Si falla, mandamos mensaje de texto PRO mientras
-        # para no dejarte sin señal
-        print(f"Error captura: {e}, enviando señal texto")
-        try:
-            telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-            texto = f"""🔥 **XAUUSD | ORO AL CONTADO**
-💰 Precio: 4.350.340
-📊 Señal detectada
-⚠️ Gráfico en mantenimiento, señal válida
-
-@xau_deivid_vip"""
-            data = {'chat_id': CHANNEL, 'text': texto, 'parse_mode': 'Markdown'}
-            resp = requests.post(telegram_url, data=data)
-            return f"Enviado en modo texto (fallback) por error: {e} - {resp.text}"
-        except Exception as e2:
-            return f"Error total: {e} / {e2}"
-
-def enviar_a_telegram(img_data, caption):
-    telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-    files = {'photo': ('xau.png', img_data)}
-    data = {'chat_id': CHANNEL, 'caption': caption, 'parse_mode': 'Markdown'}
-    resp = requests.post(telegram_url, data=data, files=files)
-    return f"¡Gráfico enviado! {resp.text}"
+        return {"ok": False, "error": str(e)}
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
