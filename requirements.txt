@@ -1,5 +1,4 @@
-Flask
-gunicorn
-yfinance
-pytz
-requests
+Flask==2.3.3
+requests==2.31.0
+matplotlib==3.7.3
+gunicorn==21.2.0
