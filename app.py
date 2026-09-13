@@ -1,42 +1,48 @@
-from flask import Flask, request, jsonify
-import os
-import requests
+import os, requests, threading, time
+from flask import Flask
 from datetime import datetime
 
 app = Flask(__name__)
 
-# --- CONFIG ---
-TOKEN = os.environ.get("WHATSAPP_TOKEN", "test")
-PHONE_ID = os.environ.get("PHONE_ID", "test")
+TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_TOKEN") or ""
+CHAT_ID = os.environ.get("CHAT_ID") or os.environ.get("TELEGRAM_CHAT_ID") or ""
 
-@app.route('/')
+def send_telegram(text):
+    if not TOKEN or not CHAT_ID:
+        return "Falta BOT_TOKEN o CHAT_ID"
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    try:
+        r = requests.post(url, json={"chat_id": CHAT_ID, "text": text, "parse_mode": "Markdown"}, timeout=10)
+        return r.text
+    except Exception as e:
+        return str(e)
+
+def get_xau_price():
+    try:
+        r = requests.get("https://api.gold-api.com/price/XAU", timeout=10)
+        return float(r.json().get("price", 4408))
+    except:
+        return 4408.0
+
+@app.route("/")
 def home():
-    return "Bot Deivid V8 - ONLINE - /test para probar", 200
+    return "Bot Deivid V9.1 TELEGRAM - ONLINE 🟢", 200
 
-@app.route('/test')
+@app.route("/test")
 def test():
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    # Sabado = 5
-    if datetime.now().weekday() == 5:
-        return f"Mercado cerrado sabado - {now} - Bot VIVO", 200
-    return f"TEST OK V8 - Bot vivo - XAU - {now} - TODO BIEN", 200
+    price = get_xau_price()
+    msg = f"✅ *TEST V9.1 OK*\n\nBot vivo 🟢\nXAU: *{price}*\nID: `{CHAT_ID}`"
+    result = send_telegram(msg)
+    return f"Resultado Telegram: {result} | XAU {price}", 200
 
-@app.route('/webhook', methods=['GET'])
-def webhook_verify():
-    mode = request.args.get("hub.mode")
-    token = request.args.get("hub.verify_token")
-    challenge = request.args.get("hub.challenge")
-    verify_token = os.environ.get("VERIFY_TOKEN", "deivid123")
-    if mode == "subscribe" and token == verify_token:
-        return challenge, 200
-    return "Verification failed", 403
+def bot_loop():
+    time.sleep(10)
+    send_telegram("🚀 *BOT V9.1 CONECTADO* - Listo para señales XAU")
+    while True:
+        print(f"XAU: {get_xau_price()}")
+        time.sleep(60)
 
-@app.route('/webhook', methods=['POST'])
-def webhook_receive():
-    data = request.get_json()
-    print(f"Mensaje recibido: {data}")
-    return "OK", 200
+threading.Thread(target=bot_loop, daemon=True).start()
 
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
