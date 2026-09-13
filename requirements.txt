@@ -1,8 +1,5 @@
-Flask
 yfinance
-mplfinance
-pandas
 requests
 matplotlib
-gunicorn
-APScheduler
+pandas
+pytz
