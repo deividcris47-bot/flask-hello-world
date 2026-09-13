@@ -2,8 +2,8 @@ import requests, pandas as pd, matplotlib.pyplot as plt, pytz, time, os, threadi
 from datetime import datetime
 from flask import Flask
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "AQUI_PON_TU_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID", "@TU_CANAL")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8870473192:AAElumHWfjg2paoljk1IANUvRW3dISms5eg")
+CHAT_ID = os.getenv("CHAT_ID", "@-1004419307514")
 EC_TZ = pytz.timezone('America/Guayaquil')
 
 app = Flask(__name__)
