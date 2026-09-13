@@ -1,4 +1,4 @@
 Flask
 gunicorn
 yfinance
-pandas
+pytz
