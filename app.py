@@ -2,8 +2,8 @@ import yfinance as yf, requests, time, pytz
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-BOT_TOKEN = "PON_AQUI_TU_TOKEN"
-CHAT_ID = "@TU_CANAL"
+BOT_TOKEN = "8870473192:AAElumHWfjg2paoljk1IANUvRW3dISms5eg"
+CHAT_ID = "-1004419307514"
 URL = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 SIMBOLOS = {"XAUUSD":"GC=F","EURUSD":"EURUSD=X","BTCUSD":"BTC-USD"}
 
