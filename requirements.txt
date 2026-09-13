@@ -1,5 +1,4 @@
-yfinance
 requests
-matplotlib
 pandas
+matplotlib
 pytz
