@@ -17,8 +17,9 @@ def get_btc():
     try:
         r = requests.get("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=60", timeout=15)
         data = r.json()
+        # FIX: sin nombres de columnas raras
         df = pd.DataFrame(data)
-        df = df[[1,2,3,4]].astype(float)
+        df = df.iloc[:, 1:5].astype(float)  # toma columnas 1,2,3,4 directo
         df.columns = ['Open','High','Low','Close']
         return df
     except Exception as e:
@@ -31,9 +32,11 @@ def bot_loop():
     while True:
         try:
             df = get_btc()
-            if df is None:
+            if df is None or df.empty:
+                print("Sin datos, reintentando en 10s")
                 time.sleep(10)
                 continue
+            
             entrada = float(df['Close'].iloc[-1])
             
             plt.figure(figsize=(10,5))
@@ -43,7 +46,6 @@ def bot_loop():
             plt.savefig('chart.png', dpi=100)
             plt.close()
 
-            print(f"Enviando a {CHAT_ID}...")
             with open('chart.png','rb') as f:
                 resp = requests.post(
                     f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
@@ -54,6 +56,7 @@ def bot_loop():
                 print(f"Telegram resp: {resp.text}")
         except Exception as e:
             print(f"Error loop: {e}")
-        time.sleep(900) # 15 minutos
+        print("Esperando 15 min...")
+        time.sleep(900)
 
 threading.Thread(target=bot_loop, daemon=True).start()
