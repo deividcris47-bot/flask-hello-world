@@ -9,7 +9,7 @@ from io import BytesIO
 
 app = Flask(__name__)
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "88704419307514:AA...pon-tu-token-aqui")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8870473192:AAHLAqRgOKujQN4KT9xD1WIQHET-u7QywBU")
 CHANNEL_ID = os.environ.get("CHANNEL_ID", "-1004419307514")
 LAST_ERROR = "Ninguno"
 
