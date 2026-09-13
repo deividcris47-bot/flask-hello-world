@@ -7,4 +7,8 @@ def home():
 
 @app.route('/test')
 def test():
-    return "TEST OK", 200
+    return "TEST OK - Bot vivo", 200
+
+@app.errorhandler(404)
+def anti_404(e):
+    return "BOT ONLINE - Ve a / o /test", 200
