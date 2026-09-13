@@ -11,8 +11,8 @@ app = Flask(__name__)
 @app.route('/')
 def home(): return "BOT V4 TP1 TP2 TP3 ACTIVO", 200
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8324174552:AAE3Cc3u5annbT7EOb4p1m2mP4OqG0g")
-CHANNEL_ID = os.environ.get("CHANNEL_ID", "@XAUDeividVipSenales")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8870473192:AAHLAqRgOKujQN4KT9xD1WIQHET-u7QywBU")
+CHANNEL_ID = os.environ.get("CHANNEL_ID", "-1004419307514")
 
 PARES = {
     "BTCUSDT": "BTC/USD",
