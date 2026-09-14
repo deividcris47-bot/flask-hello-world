@@ -2,3 +2,7 @@ Flask==2.3.3
 requests==2.31.0
 pytz==2023.3
 gunicorn==21.2.0
+yfinance==0.2.38
+pandas==2.2.0
+matplotlib==3.8.2
+mplfinance==0.12.10b0
