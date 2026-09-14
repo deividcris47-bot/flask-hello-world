@@ -9,8 +9,8 @@ def home():
 
 @app.route('/send')
 def send():
-    TOKEN = os.getenv("TOKEN")
-    CHAT_ID = os.getenv("CHAT_ID")
+    TOKEN = os.getenv("8870473192:AAHLAqRgOKujQN4KT9xD1WIQHET-u7QywBU")
+    CHAT_ID = os.getenv("-1004419307514")
     
     # precio real
     try:
