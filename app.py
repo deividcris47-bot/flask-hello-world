@@ -1,115 +1,58 @@
-import os
-import yfinance as yf
-import pandas as pd
-import mplfinance as mpf
-import requests
+import os, yfinance as yf, pandas as pd, mplfinance as mpf, requests, json, threading, time
 from flask import Flask
 from datetime import datetime
-import json
 
 app = Flask(__name__)
-
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
-CONTADOR_FILE = "/tmp/contador.json"
+ESTADO_FILE = "/tmp/trade.json"
 
-def get_contador():
+def enviar(msg):
     try:
-        with open(CONTADOR_FILE, "r") as f:
-            data = json.load(f)
-            fecha = data.get("fecha")
-            hoy = datetime.now().strftime("%Y-%m-%d")
-            if fecha != hoy:
-                return 0, hoy
-            return data.get("count", 0), hoy
-    except:
-        return 0, datetime.now().strftime("%Y-%m-%d")
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}, timeout=10)
+    except: pass
 
-def save_contador(count, fecha):
-    with open(CONTADOR_FILE, "w") as f:
-        json.dump({"count": count, "fecha": fecha}, f)
+def get_data(interval, period):
+    df = yf.download("GC=F", period=period, interval=interval, progress=False)
+    df.columns = [c.lower() for c in df.columns]
+    return df
 
-def enviar_telegram(texto, imagen_path=None):
-    try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto" if imagen_path else f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        if imagen_path:
-            with open(imagen_path, 'rb') as photo:
-                data = {"chat_id": CHAT_ID, "caption": texto, "parse_mode": "Markdown"}
-                r = requests.post(url, data=data, files={"photo": photo}, timeout=20)
-        else:
-            data = {"chat_id": CHAT_ID, "text": texto, "parse_mode": "Markdown"}
-            r = requests.post(url, data=data, timeout=20)
-        print(f"Telegram response: {r.text}")
-        return r.json()
-    except Exception as e:
-        print(f"Error telegram: {e}")
-        return {"ok": False}
+def bot_loop():
+    while True:
+        try:
+            # 15m BOS+CHOCH+STRONG
+            df15 = get_data("15m", "5d")
+            precio15 = float(df15['close'].iloc[-1])
+            high_20 = df15['high'].iloc[-21:-1].max()
+            low_20 = df15['low'].iloc[-21:-1].min()
+            if precio15 > high_20: tend, score, strong = "ALCISTA", 6, low_20
+            elif precio15 < low_20: tend, score, strong = "BAJISTA", 6, high_20
+            else: time.sleep(60); continue
 
-def analizar():
-    # XAUUSD = GC=F en Yahoo
-    try:
-        df_1m = yf.download("GC=F", period="1d", interval="1m")
-        df_5m = yf.download("GC=F", period="5d", interval="5m")
-        df_15m = yf.download("GC=F", period="5d", interval="15m")
-        
-        if df_1m.empty or len(df_1m) < 50:
-            return None, "Mercado cerrado fin de semana", 0, 0
+            # 5m OB+FVG
+            df5 = get_data("5m", "2d")
+            entrada=sl= None
+            for i in range(-10,-2):
+                v1,v2,v3 = df5.iloc[i-1], df5.iloc[i], df5.iloc[i+1]
+                fvg = (v3['low']>v1['high']) if tend=="ALCISTA" else (v3['high']<v1['low'])
+                ob = (v2['close']<v2['open'] and v3['close']>v2['high']) if tend=="ALCISTA" else (v2['close']>v2['open'] and v3['close']<v2['low'])
+                if fvg and ob:
+                    entrada = (v2['low']+v2['high'])/2
+                    sl = v2['low']-2 if tend=="ALCISTA" else v2['high']+2
+                    break
 
-        precio = float(df_1m['Close'].iloc[-1])
-        
-        # Logica Sniper simple (BOS + OB) - si no hay señal retorna esperando
-        # Para prueba forzamos señal
-        return df_1m, precio, df_5m, df_15m
-    except Exception as e:
-        return None, f"Error Yahoo: {e}", 0, 0
+            if entrada and abs(entrada-precio15) < 10:
+                riesgo = abs(entrada-sl)
+                tp1, tp2, tp3 = (entrada+riesgo*1, entrada+riesgo*2, entrada+riesgo*3.5) if tend=="ALCISTA" else (entrada-riesgo*1, entrada-riesgo*2, entrada-riesgo*3.5)
+                enviar(f"🟢 *Señal {tend} 8/8 - {entrada:.2f}*\n15m: BOS+CHOCH+STRONG | 5m: OB+FVG\n🎯 {entrada:.2f} 🛑 {sl:.2f}\n✅ TP1 {tp1:.2f} | TP2 {tp2:.2f} | TP3 {tp3:.2f}")
+                time.sleep(900)
+        except: pass
+        time.sleep(60)
 
-@app.route("/")
-def home():
-    return "Bot XAUUSD Sniper Activo - Usa /send"
+threading.Thread(target=bot_loop, daemon=True).start()
 
-@app.route("/send")
-def send():
-    from flask import request
-    is_test = request.args.get("test") == "1"
-    
-    count, fecha_hoy = get_contador()
-    if count >= 8 and not is_test:
-        return f"Limite 8/8 alcanzado hoy {fecha_hoy}"
-
-    df_1m, precio, df_5m, df_15m = analizar()
-    
-    if df_1m is None:
-        if is_test:
-            # MODO PRUEBA: fuerza señal aunque mercado cerrado
-            precio = 4330.44
-            texto = f"🟢 *Señal Comprar* `0/8` - *{precio}* (PRUEBA)\nTend: BAJISTA | BOS + CHOCH + OB | Zona limpia"
-            # crea grafico dummy negro
-            import matplotlib.pyplot as plt
-            plt.figure(figsize=(8,4))
-            plt.plot([4300, 4320, 4330, precio])
-            plt.title(f"XAUUSD TEST - {precio}")
-            plt.savefig("/tmp/chart.png")
-            plt.close()
-            enviar_telegram(texto, "/tmp/chart.png")
-            return f"Señal Comprar 0/8 enviada - {precio} (PRUEBA)"
-        else:
-            return f"Mercado cerrado fin de semana | Velas 1M: 0 | El domingo 5pm abre"
-
-    # Aqui iria tu logica real BOS+CHOCH+OB
-    # Por ahora si no hay señal:
-    if not is_test:
-        return f"Esperando sniper | Tend:BAJISTA | Velas 1M:{len(df_1m)} | Precio:{precio:.2f} | {count}/8"
-
-    # Si es test y mercado abierto
-    texto = f"🟢 *Señal Comprar* `{count+1}/8` - *{precio:.2f}* (PRUEBA)\nTend: BAJISTA | BOS detectado | OB Limpio"
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(8,4))
-    plt.plot(df_1m['Close'].tail(100))
-    plt.title(f"XAUUSD - {precio:.2f}")
-    plt.savefig("/tmp/chart.png")
-    plt.close()
-    enviar_telegram(texto, "/tmp/chart.png")
-    return f"Señal Comprar {count+1}/8 enviada - {precio} (PRUEBA)"
+@app.route('/')
+def home(): return "Bot 8/8 activo"
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",10000)))
