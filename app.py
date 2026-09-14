@@ -1,50 +1,39 @@
 from flask import Flask
-import requests, datetime, pytz, os
+import requests, os
 
 app = Flask(__name__)
-ECUADOR = pytz.timezone('America/Guayaquil')
 
-TOKEN = os.getenv("TOKEN", "PON_AQUI_TU_TOKEN_DE_BOTFATHER")
-CHAT_ID = os.getenv("CHAT_ID", "PON_AQUI_TU_CHAT_ID")
+TOKEN = os.getenv("TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
-def get_xau_price():
+def get_price():
     try:
         r = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT", timeout=5)
         return float(r.json()['price'])
     except:
-        return 4332.00
-
-def send_telegram(text):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": CHAT_ID, "text": text, "parse_mode":"HTML"})
+        return 4343.10
 
 @app.route('/')
 def home():
-    hora_ec = datetime.datetime.now(ECUADOR).strftime("%H:%M:%S")
-    return f"V20 ACTIVO ✅ {hora_ec} - /senal - /send"
-
-@app.route('/senal')
-def senal():
-    precio = get_xau_price()
-    msg = f"""🟢 Compra XAUUSD 🔥
-SL: {precio-2.5:.2f}
-Entrar en: {precio:.2f}
-TP1: {precio+2.0:.2f}
-TP2: {precio+4.5:.2f}
-TP3: {precio+8.0:.2f}
-CHoCH + BOS + Rompimiento vela grande 1M confirmado"""
-    return msg.replace("\n", "<br>")
+    return "V20 ACTIVO - FORMATO COMPRA ✅"
 
 @app.route('/send')
 def send():
-    precio = get_xau_price()
-    msg = f"""🟢 Compra XAUUSD 🔥
-SL: {precio-2.5:.2f}
-Entrar en: {precio:.2f}
-TP1: {precio+2.0:.2f}
-TP2: {precio+4.5:.2f}
-TP3: {precio+8.0:.2f}
-CHoCH + BOS + Rompimiento vela grande 1M confirmado
-Hora EC: {datetime.datetime.now(ECUADOR).strftime('%H:%M')}"""
-    send_telegram(msg)
-    return f"Enviado a Telegram ✅<br>{msg.replace(chr(10),'<br>')}"
+    p = get_price()
+    
+    caption = f"""🟢 Compra xauusd 🔥
+SL: {p-5.5:.2f}
+Entrar en: {p:.2f}
+TP1: {p+2.5:.2f}
+TP2: {p+5.5:.2f}
+TP3: {p+9.5:.2f}
+
+Grafico 👇"""
+
+    # envia solo texto con tu formato + luego el gráfico es opcional
+    url_text = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    r1 = requests.post(url_text, json={"chat_id": CHAT_ID, "text": caption})
+
+    # Si quieres con foto, usa esta foto que subiste como base
+    # Por ahora envia solo texto para probar que llega
+    return f"{caption} <br><br> Telegram: {r1.text}"
