@@ -5,3 +5,4 @@ gunicorn
 yfinance
 pandas
 matplotlib
+mplfinance
