@@ -1,8 +1,6 @@
-Flask
-requests
-pytz
-gunicorn
+flask
 yfinance
+requests
 pandas
-matplotlib
 mplfinance
+matplotlib
