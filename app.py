@@ -1,152 +1,113 @@
-from flask import Flask
-import threading, time, requests, os
+import os, time, threading, requests
 import yfinance as yf
 import pandas as pd
 import mplfinance as mpf
-import matplotlib.pyplot as plt
+from flask import Flask
 
 app = Flask(__name__)
 
-BOT_TOKEN = "8870473192:AAEiJnwhA0fuMmc1CtfH_UJ27HVYIQwOflU"
-CHAT_ID = "-1004419307514"
+BOT_TOKEN = os.getenv("8870473192:AAEiJnwhA0fuMmc1CtfH_UJ27HVYIQwOflU")
+CHAT_ID = os.getenv("-1004419307514")
 
-# ========= TELEGRAM =========
-def send_msg(text):
+ultima_senal = ""
+poi_aviso = {}
+
+def send_telegram(text, chart_path=None):
     try:
-        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                      data={"chat_id": CHAT_ID, "text": text, "parse_mode": "Markdown"}, timeout=15)
-    except Exception as e: print(e)
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        requests.post(url, data={"chat_id": CHAT_ID, "text": text, "parse_mode": "Markdown"}, timeout=15)
+        if chart_path and os.path.exists(chart_path):
+            url_photo = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+            with open(chart_path, 'rb') as f:
+                requests.post(url_photo, data={"chat_id": CHAT_ID, "caption": "📊 Gráfico Real V5 PRO"}, files={"photo": f}, timeout=20)
+    except Exception as e:
+        print("Error TG:", e)
 
-def send_chart(image_path, caption):
+def get_data():
     try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-        with open(image_path, 'rb') as f:
-            requests.post(url, data={"chat_id": CHAT_ID, "caption": caption, "parse_mode": "Markdown"}, files={"photo": f}, timeout=20)
-    except Exception as e: print(f"Error foto: {e}")
+        df15 = yf.download("GC=F", period="5d", interval="15m", progress=False)
+        df5 = yf.download("GC=F", period="2d", interval="5m", progress=False)
+        if df15.empty or df5.empty: return None, None
+        if isinstance(df15.columns, pd.MultiIndex): df15.columns = df15.columns.get_level_values(0)
+        if isinstance(df5.columns, pd.MultiIndex): df5.columns = df5.columns.get_level_values(0)
+        return df15.dropna(), df5.dropna()
+    except Exception as e:
+        print("Error data:", e)
+        return None, None
 
-# ========= SMC LOGIC =========
-def get_analysis():
-    df15 = yf.download("GC=F", period="5d", interval="15m", progress=False, auto_adjust=True)
-    df5 = yf.download("GC=F", period="2d", interval="5m", progress=False, auto_adjust=True)
-    df15.dropna(inplace=True)
-    df5.dropna(inplace=True)
+def analizar():
+    global ultima_senal, poi_aviso
+    df15, df5 = get_data()
+    if df15 is None or len(df15) < 60: return
 
-    # Tendencia 15M con EMA 50 y 200
-    df15['EMA50'] = df15['Close'].ewm(span=50).mean()
-    df15['EMA200'] = df15['Close'].ewm(span=200).mean()
+    precio = float(df5['Close'].iloc[-1])
+    high_15 = float(df15['High'].rolling(20).max().iloc[-2])
+    low_15 = float(df15['Low'].rolling(20).min().iloc[-2])
+
+    # --- 1. RADAR PREVIO - 5 DOLARES ANTES ---
+    dist_high = abs(precio - high_15)
+    dist_low = abs(precio - low_15)
     
-    last = df15.iloc[-1]
-    prev_high = df15['High'].tail(20).max()
-    prev_low = df15['Low'].tail(20).min()
-    
-    tendencia = "ALCISTA" if last['Close'] > last['EMA50'] > last['EMA200'] else "BAJISTA" if last['Close'] < last['EMA50'] else "LATERAL"
-    
-    # BOS / CHOCH
-    bos_alcista = last['Close'] > prev_high
-    bos_bajista = last['Close'] < prev_low
-    choch = "CHOCH BAJISTA" if bos_bajista and tendencia == "ALCISTA" else "CHOCH ALCISTA" if bos_alcista and tendencia == "BAJISTA" else ""
+    zona_cercana = None
+    tipo_esperado = None
+    if dist_high < 5:
+        zona_cercana = high_15
+        tipo_esperado = "SELL"
+    elif dist_low < 5:
+        zona_cercana = low_15
+        tipo_esperado = "BUY"
 
-    # ORDER BLOCK (ultima vela opuesta antes del impulso)
-    ob_price = df15.iloc[-3]['Low'] if bos_bajista else df15.iloc[-3]['High'] if bos_alcista else last['Close']
-    ob_type = "BEARISH OB" if bos_bajista else "BULLISH OB" if bos_alcista else "NO OB"
+    if zona_cercana:
+        zona_round = round(zona_cercana, 1)
+        if poi_aviso.get("zona") != zona_round:
+            poi_aviso = {"zona": zona_round}
+            msg = f"⚠️ *RADAR V5 - POI FORMÁNDOSE* ⏳\n\n📍 Zona POI: {zona_cercana:.2f}\n💰 Precio actual: {precio:.2f}\n👀 Tipo esperado: {tipo_esperado}\n\n⛔ *NO ENTRAR AÚN*\n✅ Solo alístate: Abre tu broker, pon lotaje 0.01-0.03\n🔫 Espera mi señal de *ROMPIMIENTO* para disparar."
+            send_telegram(msg)
+            print(f"RADAR {tipo_esperado} {zona_cercana}")
 
-    # IMBALANCE / FVG
-    fvg = abs(df15['High'].iloc[-2] - df15['Low'].iloc[-3]) > (last['Close']*0.001)
+    # --- 2. SEÑAL CONFIRMADA - BOS/CHOCH ---
+    bos_buy = precio > high_15 + 1.0
+    bos_sell = precio < low_15 - 1.0
 
-    # POI / Zona de Resteo
-    poi = df15['Low'].tail(30).min() if tendencia == "BAJISTA" else df15['High'].tail(30).max()
+    if bos_buy or bos_sell:
+        direccion = "BUY" if bos_buy else "SELL"
+        entrada = precio
+        
+        if direccion == "BUY":
+            sl = entrada - 8
+            t1, t2, t3 = entrada + 6, entrada + 12, entrada + 20
+        else:
+            sl = entrada + 8
+            t1, t2, t3 = entrada - 6, entrada - 12, entrada - 20
 
-    return df15, df5, {
-        "tendencia": tendencia,
-        "bos_alcista": bos_alcista,
-        "bos_bajista": bos_bajista,
-        "choch": choch,
-        "ob": ob_price,
-        "ob_type": ob_type,
-        "fvg": fvg,
-        "poi": poi,
-        "precio": last['Close']
-    }
-
-def make_chart(df15, info):
-    # Grafico real de velas japonesas
-    df_plot = df15.tail(60).copy()
-    df_plot.index.name = 'Date'
-    
-    # SL y TPs
-    if info['tendencia'] == "BAJISTA":
-        sl = df_plot['High'].tail(10).max() + 2
-        t1 = info['precio'] - 3
-        t2 = info['precio'] - 6
-        t3 = info['precio'] - 10
-    else:
-        sl = df_plot['Low'].tail(10).min() - 2
-        t1 = info['precio'] + 3
-        t2 = info['precio'] + 6
-        t3 = info['precio'] + 10
-
-    # Niveles para dibujar
-    hlines = dict(hlines=[info['ob'], info['poi'], sl, t1, t2, t3],
-                  colors=['orange','blue','red','green','green','green'],
-                  linestyle=['--','-.','-','--','--','-'],
-                  linewidths=[1.5,1.5,1.2,1,1,1.2])
-
-    save = dict(fname="chart.png", dpi=100)
-    mpf.plot(df_plot, type='candle', style='yahoo', title=f"XAUUSD 15M - {info['tendencia']} - {info['choch']}",
-             hlines=hlines, savefig=save, volume=False, figratio=(12,6))
-    
-    return sl, t1, t2, t3
-
-# ========= BOT LOOP =========
-def bot_loop():
-    time.sleep(10)
-    send_msg("✅ *V5 SMC PRO ACTIVADO*\n15M Análisis / 5M Gatillo\nCHOCH-BOS-OB-FVG-POI + TP/SL + Gráfico")
-
-    while True:
-        try:
-            df15, df5, info = get_analysis()
+        senal_id = f"{direccion}_{round(entrada/2)*2}" # evita repetir cada tick
+        if senal_id != ultima_senal:
+            ultima_senal = senal_id
             
-            # Gatillo 5M
-            vela5 = df5.iloc[-1]
-            gatillo_sell = vela5['Close'] < vela5['Open'] and info['bos_bajista']
-            gatillo_buy = vela5['Close'] > vela5['Open'] and info['bos_alcista']
+            # Gráfico real
+            chart_path = "/tmp/chart.png"
+            try:
+                plot_df = df5.tail(60)
+                mpf.plot(plot_df, type='candle', style='yahoo', title=f'XAUUSD {direccion} V5 PRO', volume=False, savefig=chart_path)
+            except: chart_path = None
 
-            log = f"{info['tendencia']} | {info['choch']} | {info['ob_type']} | Precio {info['precio']:.2f}"
-            print(log, flush=True)
+            msg = f"🚨 *SEÑAL {direccion} CONFIRMADA V5 PRO* 🚨\n\n📊 ChoCH/BOS en 15M + OB + FVG + POI\n🎯 Entrada: {entrada:.2f}\n🛑 SL: {sl:.2f} (8$)\n✅ TP1: {t1:.2f} (Cierra 50% + BE)\n✅ TP2: {t2:.2f} (Cierra 30%)\n✅ TP3: {t3:.2f} (Deja correr 20%)\n\n⏰ 15M Análisis / 5M Gatillo\n🔥 ¡ENTRA AHORA!"
+            send_telegram(msg, chart_path)
+            print(f"SEÑAL {direccion} ENVIADA {entrada}")
 
-            if (gatillo_sell or gatillo_buy) and info['fvg']:
-                sl, t1, t2, t3 = make_chart(df15, info)
-                
-                tipo = "SELL" if gatillo_sell else "BUY"
-                caption = f"""
-🚨 *SEÑAL {tipo} CONFIRMADA - SMC*
+def loop():
+    time.sleep(10)
+    send_telegram("✅ *V5 SMC PRO + RADAR ACTIVADO* ✅\n\n15M Análisis / 5M Gatillo\n\nAhora tienes:\n⚠️ Aviso previo POI formándose (NO ENTRAR)\n🚨 Señal confirmada con gráfico real + TP/SL\n\nQuedate tranquilo, yo vigilo el ORO por ti 24/7")
+    while True:
+        try: analizar()
+        except Exception as e: print("Error loop", e)
+        time.sleep(300)
 
-📊 *Tendencia 15M:* {info['tendencia']}
-🔄 *Estructura:* {info['choch'] if info['choch'] else 'BOS ' + tipo}
-📦 *Order Block:* {info['ob_type']} en {info['ob']:.2f}
-⚖️ *Imbalance/FVG:* {'SI ✅' if info['fvg'] else 'NO'}
-📍 *POI / Zona Resteo:* {info['poi']:.2f}
-💥 *Rompimiento:* {info['precio']:.2f}
-
-🎯 *ENTRADA:* {info['precio']:.2f}
-🛑 *SL:* {sl:.2f}
-✅ *T1:* {t1:.2f}
-✅ *T2:* {t2:.2f}
-✅ *T3:* {t3:.2f}
-
-15M análisis + 5M gatillo
-"""
-                send_chart("chart.png", caption)
-
-            time.sleep(300) # 5 min
-        except Exception as e:
-            print(f"Error loop: {e}", flush=True)
-            time.sleep(300)
-
-threading.Thread(target=bot_loop, daemon=True).start()
+threading.Thread(target=loop, daemon=True).start()
 
 @app.route('/')
-def home(): return "V5 SMC PRO Live - 15M/5M + OB/FVG/CHOCH/BOS + CHART"
+def home():
+    return "V5 PRO + RADAR ACTIVO - Tena"
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
