@@ -1,40 +1,25 @@
 from flask import Flask
 import requests, os
-
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return "V20 TELEGRAM ACTIVO ✅"
+@app.route('/test_token')
+def test_token():
+    TOKEN = (os.getenv("BOT_TOKEN") or os.getenv("TOKEN") or "").strip()
+    r = requests.get(f"https://api.telegram.org/bot{TOKEN}/getMe").json()
+    return str(r)
 
 @app.route('/send')
 def send():
-    TOKEN = os.getenv("8870473192:AAHLAqRgOKujQN4KT9xD1WIQHET-u7QywBU")
-    CHAT_ID = os.getenv("-1004419307514")
-    
-    # precio real
+    TOKEN = (os.getenv("BOT_TOKEN") or os.getenv("TOKEN") or "").strip()
+    CHAT_ID = (os.getenv("CHAT_ID") or "").strip()
+    p = 4343.10
     try:
-        r = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT", timeout=5)
-        p = float(r.json()['price'])
-    except:
-        p = 4343.10
+        p = float(requests.get("https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT", timeout=5).json()['price'])
+    except: pass
+    msg = f"🟢 Compra xauusd 🔥\n\nSL: {p-5.5:.2f}\nEntrar en: {p:.2f}\nTP1: {p+4.5:.2f}\nTP2: {p+8.5:.2f}\nTP3: {p+14.0:.2f}\n\nGrafico 15M 👇"
+    resp = requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": msg}).json()
+    return f"{resp}<br><pre>{msg}</pre>"
 
-    # TU FORMATO EXACTO QUE PEDISTE
-    msg = f"""🟢 Compra xauusd 🔥
-
-SL: {p-5.5:.2f}
-Entrar en: {p:.2f}
-TP1: {p+4.5:.2f}
-TP2: {p+8.5:.2f}
-TP3: {p+14.0:.2f}
-
-Grafico 15M 👇"""
-
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    resp = requests.post(url, json={"chat_id": CHAT_ID, "text": msg})
-    
-    return f"Enviado: {resp.text}<br><br><pre>{msg}</pre>"
-
-@app.route('/senal')
-def senal():
-    return "Abre /send para probar"
+@app.route('/')
+def home():
+    return "V20 OK"
