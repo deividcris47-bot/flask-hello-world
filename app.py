@@ -1,10 +1,11 @@
 from flask import Flask
-import datetime
-import pytz
-import requests
+import requests, datetime, pytz, os
 
 app = Flask(__name__)
 ECUADOR = pytz.timezone('America/Guayaquil')
+
+TOKEN = os.getenv("TOKEN", "PON_AQUI_TU_TOKEN_DE_BOTFATHER")
+CHAT_ID = os.getenv("CHAT_ID", "PON_AQUI_TU_CHAT_ID")
 
 def get_xau_price():
     try:
@@ -13,34 +14,37 @@ def get_xau_price():
     except:
         return 4332.00
 
+def send_telegram(text):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    requests.post(url, json={"chat_id": CHAT_ID, "text": text, "parse_mode":"HTML"})
+
 @app.route('/')
 def home():
     hora_ec = datetime.datetime.now(ECUADOR).strftime("%H:%M:%S")
-    return f"""
-    V20 ACTIVO ✅<br>
-    Hora Ecuador: {hora_ec}<br>
-    7 señales: 19:00, 22:00, 03:00, 06:00, 08:30, 10:30, 13:00<br>
-    Filtros: CHoCH + BOS + STRONG + ROMPIMIENTO vela grande 1M<br>
-    <a href="/senal">Ver señal</a>
-    """
+    return f"V20 ACTIVO ✅ {hora_ec} - /senal - /send"
 
 @app.route('/senal')
 def senal():
     precio = get_xau_price()
-    sl = precio - 2.5
-    entrada = precio
-    tp1 = precio + 2.0
-    tp2 = precio + 4.5
-    tp3 = precio + 8.0
-    return f"""
-    🟢 Compra XAUUSD 🔥<br>
-    SL: {sl:.2f}<br>
-    Entrar en: {entrada:.2f}<br>
-    TP1: {tp1:.2f}<br>
-    TP2: {tp2:.2f}<br>
-    TP3: {tp3:.2f}<br>
-    <small>CHoCH + BOS + Rompimiento vela grande 1M confirmado</small>
-    """
+    msg = f"""🟢 Compra XAUUSD 🔥
+SL: {precio-2.5:.2f}
+Entrar en: {precio:.2f}
+TP1: {precio+2.0:.2f}
+TP2: {precio+4.5:.2f}
+TP3: {precio+8.0:.2f}
+CHoCH + BOS + Rompimiento vela grande 1M confirmado"""
+    return msg.replace("\n", "<br>")
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+@app.route('/send')
+def send():
+    precio = get_xau_price()
+    msg = f"""🟢 Compra XAUUSD 🔥
+SL: {precio-2.5:.2f}
+Entrar en: {precio:.2f}
+TP1: {precio+2.0:.2f}
+TP2: {precio+4.5:.2f}
+TP3: {precio+8.0:.2f}
+CHoCH + BOS + Rompimiento vela grande 1M confirmado
+Hora EC: {datetime.datetime.now(ECUADOR).strftime('%H:%M')}"""
+    send_telegram(msg)
+    return f"Enviado a Telegram ✅<br>{msg.replace(chr(10),'<br>')}"
