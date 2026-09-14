@@ -1,4 +1,4 @@
-import os, requests, yfinance as yf
+import os, requests
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -11,75 +11,87 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 def generar_smc():
-    df = None
     try:
-        df = yf.download("GC=F", interval="15m", period="5d", auto_adjust=True, progress=False)
+        import yfinance as yf
+        df = yf.download("GC=F", period="5d", interval="15m", auto_adjust=True, progress=False)
         df = df.dropna()
-    except:
-        df = None
+        if len(df) < 50:
+            raise ValueError("pocos datos")
+        closes = df['Close'].values.flatten().astype(float)
+        highs = df['High'].values.flatten().astype(float)
+        lows = df['Low'].values.flatten().astype(float)
+    except Exception as e:
+        print(f"Fallback por: {e}")
+        np.random.seed(int(pd.Timestamp.now().timestamp()) % 1000)
+        closes = 3650 + np.cumsum(np.random.randn(80))
+        highs = closes + 2
+        lows = closes - 2
 
-    # Si es fin de semana, usa datos simulados PRO para que no salga corrupto
-    if df is None or len(df) < 40:
-        np.random.seed(42)
-        base = 3650 + np.cumsum(np.random.randn(80)*1.5)
-        df = pd.DataFrame({
-            "Close": base,
-            "High": base + np.random.rand(80)*2,
-            "Low": base - np.random.rand(80)*2,
-        })
-
-    closes = df['Close'].values.astype(float)
-    highs = df['High'].values.astype(float)
-    lows = df['Low'].values.astype(float)
     price = float(closes[-1])
-
-    swing_high = float(pd.Series(highs).rolling(10).max().dropna().iloc[-15])
-    swing_low = float(pd.Series(lows).rolling(10).min().dropna().iloc[-15])
     strong_high = float(np.max(highs))
     strong_low = float(np.min(lows))
+    
+    # BOS/CHoCH simples y seguros
+    mid = len(closes)//2
+    recent_high = float(np.max(highs[-20:]))
+    recent_low = float(np.min(lows[-20:]))
+    prev_high = float(np.max(highs[mid:-20]))
+    prev_low = float(np.min(lows[mid:-20]))
 
-    if price >= swing_high:
-        side, bos, choch = "Compra", swing_high, swing_low
-        status = "BOS Alcista - Rompimiento de Strong High"
+    if price > prev_high:
+        side = "Compra"
+        bos = prev_high
+        choch = prev_low
+        status = "Rompimiento Alcista - BOS Confirmado"
     else:
-        side, bos, choch = "Venta", swing_low, swing_high
-        status = "BOS Bajista - Rompimiento de Strong Low"
+        side = "Venta"
+        bos = prev_low
+        choch = prev_high
+        status = "Rompimiento Bajista - BOS Confirmado"
 
-    fig, ax = plt.subplots(figsize=(10, 6), facecolor='#131722')
+    fig, ax = plt.subplots(figsize=(10,6), facecolor='#131722')
     ax.set_facecolor('#131722')
     x = np.arange(len(closes))
     ax.plot(x, closes, color='#2962FF', linewidth=2)
-    ax.fill_between(x, closes, np.min(closes)-5, color='#2962FF', alpha=0.08)
-    ax.axhline(bos, color='#00E676', ls='--', lw=1.8)
-    ax.text(1, bos+1.2, f'BOS {bos:.2f}', color='#00E676', weight='bold', bbox=dict(facecolor='#00E676', alpha=0.18, boxstyle='round,pad=0.3'))
-    ax.axhline(choch, color='#FF5252', ls='--', lw=1.8)
-    ax.text(1, choch-2.5, f'CHoCH {choch:.2f}', color='#FF5252', weight='bold', bbox=dict(facecolor='#FF5252', alpha=0.18, boxstyle='round,pad=0.3'))
-    ax.axhline(strong_high, color='#FFD740', ls=':', alpha=0.7)
-    ax.axhline(strong_low, color='#FFD740', ls=':', alpha=0.7)
-    ax.axhspan(strong_low, strong_low+2, xmin=0.25, xmax=0.45, facecolor='#2962FF', alpha=0.28)
-    ax.text(len(closes)*0.35, strong_low+0.3, 'ORDER BLOCK', color='white', fontsize=8, ha='center', weight='bold')
+    ax.axhline(bos, color='#00E676', ls='--', lw=1.6)
+    ax.text(2, bos, f' BOS {bos:.1f}', color='#00E676', weight='bold', va='bottom')
+    ax.axhline(choch, color='#FF5252', ls='--', lw=1.6)
+    ax.text(2, choch, f' CHoCH {choch:.1f}', color='#FF5252', weight='bold', va='bottom')
+    ax.axhline(strong_high, color='#FFD740', ls=':', alpha=0.6)
+    ax.axhline(strong_low, color='#FFD740', ls=':', alpha=0.6)
     ax.set_title(f'XAUUSD 15M | {status}', color='white', weight='bold')
-    plt.savefig('/tmp/chart.png', dpi=220, facecolor='#131722', bbox_inches='tight')
+    ax.tick_params(colors='gray')
+    path = '/tmp/chart.png'
+    plt.savefig(path, dpi=200, facecolor='#131722', bbox_inches='tight')
     plt.close()
 
-    sl = price - 6.5 if side=="Compra" else price + 6.5
-    tp1, tp2, tp3 = (price+4.5, price+8.5, price+14) if side=="Compra" else (price-4.5, price-8.5, price-14)
+    if side == "Compra":
+        sl, tp1, tp2, tp3 = price-6.5, price+4.5, price+8.5, price+14
+    else:
+        sl, tp1, tp2, tp3 = price+6.5, price-4.5, price-8.5, price-14
+
     emoji = "🟢" if side=="Compra" else "🔴"
     caption = f"{emoji} {side} xauusd 🔥\n\nSL: {sl:.2f}\nEntrar en: {price:.2f}\nTP1: {tp1:.2f}\nTP2: {tp2:.2f}\nTP3: {tp3:.2f}\n\nGrafico 15M 👇\nCHoCH + BOS + Strong + Rompimiento\n{status}"
-    return caption, '/tmp/chart.png'
-
-@app.route("/send")
-def send():
-    caption, path = generar_smc()
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-    with open(path, 'rb') as f:
-        r = requests.post(url, data={"chat_id": CHAT_ID, "caption": caption}, files={"photo": f}, timeout=30)
-    return r.json()
-
-@app.route("/test_token")
-def test_token():
-    return requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getMe").json()
+    return caption, path
 
 @app.route("/")
 def home():
-    return "Bot XAU SMC v2 - Live"
+    return "Bot XAU SMC v2 - Live - OK"
+
+@app.route("/send")
+def send():
+    try:
+        caption, path = generar_smc()
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+        with open(path, 'rb') as f:
+            r = requests.post(url, data={"chat_id": CHAT_ID, "caption": caption}, files={"photo": f}, timeout=40)
+        return r.json()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "error": str(e)}, 500
+
+@app.route("/test_token")
+def test_token():
+    r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getMe")
+    return r.json()
