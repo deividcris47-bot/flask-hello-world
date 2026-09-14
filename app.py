@@ -1,86 +1,97 @@
-import os, requests
+from flask import Flask
+import yfinance as yf
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import pandas as pd
-import numpy as np
-from flask import Flask
-import yfinance as yf
+import requests, os, json
 from datetime import datetime
+import pytz
 
 app = Flask(__name__)
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
 
-def get_data():
-    try:
-        df = yf.download("GC=F", period="3d", interval="15m", auto_adjust=True, progress=False)
-        df = df.dropna().tail(60)
-        if len(df) < 30: raise ValueError("poco")
-        return df
-    except:
-        dates = pd.date_range(end=datetime.now(), periods=60, freq='15min')
-        np.random.seed(int(datetime.now().minute))
-        closes = 4376 + np.cumsum(np.random.randn(60)*0.8)
-        df = pd.DataFrame({'Open':closes+0.4,'High':closes+1.5,'Low':closes-1.5,'Close':closes}, index=dates)
-        return df
+BOT_TOKEN = "AQUI_TU_TOKEN"
+CHAT_ID = "AQUI_TU_CHAT_ID_VIP"
+CONTADOR_FILE = "contador.json"
 
-def generar_v4():
-    df = get_data()
-    o = df['Open'].values.flatten(); h = df['High'].values.flatten()
-    l = df['Low'].values.flatten(); c = df['Close'].values.flatten()
-    price = float(c[-1])
-    strong_high = float(np.max(h)); strong_low = float(np.min(l))
-    prev_high = float(np.max(h[:-15])); prev_low = float(np.min(l[:-15]))
+def get_contador():
+    if not os.path.exists(CONTADOR_FILE): return {"fecha": str(datetime.now().date()), "count": 0}
+    with open(CONTADOR_FILE, 'r') as f: return json.load(f)
 
-    if price > prev_high:
-        side, status = "Compra", "Rompimiento Alcista - BOS Confirmado"
-        bos, choch = prev_high, prev_low
-        sl, entry, tp1, tp2, tp3 = price-6.5, price, price+4.5, price+8.5, price+14
-    else:
-        side, status = "Venta", "Rompimiento Bajista - BOS Confirmado"
-        bos, choch = prev_low, prev_high
-        sl, entry, tp1, tp2, tp3 = price+6.5, price, price-4.5, price-8.5, price-14
+def save_contador(data):
+    with open(CONTADOR_FILE, 'w') as f: json.dump(data, f)
 
-    fig, ax = plt.subplots(figsize=(10,6), facecolor='#0B0E11')
-    ax.set_facecolor('#131722')
-    x = np.arange(len(df))
-    for i in range(len(df)):
-        col = '#26A69A' if c[i] >= o[i] else '#EF5350'
-        ax.plot([x[i], x[i]], [l[i], h[i]], color=col, linewidth=1)
-        b = max(max(o[i], c[i]) - min(o[i], c[i]), 0.15)
-        ax.add_patch(plt.Rectangle((x[i]-0.35, min(o[i], c[i])), 0.7, b, facecolor=col, edgecolor=col, zorder=3))
+def get_session():
+    hora = datetime.now(pytz.timezone('America/Guayaquil')).hour
+    if hora >= 19 or hora <= 0: return "🌏 ASIA"
+    elif 2 <= hora <= 6: return "🇬🇧 LONDRES"
+    else: return "🇺🇸 NEW YORK"
 
-    ax.axhline(bos, color='#00E676', ls='--', lw=2)
-    ax.text(1, bos, f' BOS {bos:.1f} ', fontsize=10, weight='bold', color='black', backgroundcolor='#00E676', va='bottom')
-    ax.axhline(choch, color='#FF5252', ls='--', lw=2)
-    ax.text(1, choch, f' CHoCH {choch:.1f} ', fontsize=10, weight='bold', color='white', backgroundcolor='#FF5252', va='bottom')
-    ax.axhline(strong_high, color='#FFD740', ls=':', lw=1.5)
-    ax.text(len(df)*0.55, strong_high, f' Strong High {strong_high:.1f}', color='#FFD740', fontsize=9, weight='bold', va='bottom')
-    ax.axhline(strong_low, color='#FFD740', ls=':', lw=1.5)
-    ax.text(len(df)*0.55, strong_low, f' Strong Low {strong_low:.1f}', color='#FFD740', fontsize=9, weight='bold', va='top')
-    ax.axhspan(choch-1.8, choch+1.8, color='#7C4DFF', alpha=0.22)
-    ax.text(1, choch+2, ' ORDER BLOCK ', color='white', backgroundcolor='#7C4DFF', fontsize=8, weight='bold')
-
-    ax.set_title(f'XAUUSD | 15M | {status} | {datetime.now().strftime("%d %b %H:%M")}', color='white', fontsize=11, weight='bold')
-    ax.tick_params(colors='#787B86'); ax.grid(color='#23262F', alpha=0.3); ax.set_xlim(-1, len(df)); ax.set_xticks([])
-    path = '/tmp/chart_v4.png'
-    plt.tight_layout(); plt.savefig(path, dpi=300, facecolor='#0B0E11'); plt.close()
-
-    emoji = "🟢" if side=="Compra" else "🔴"
-    caption = f"{emoji} {side} xauusd 🔥\n\nSL: {sl:.2f}\nEntrar en: {entry:.2f}\nTP1: {tp1:.2f}\nTP2: {tp2:.2f}\nTP3: {tp3:.2f}\n\nGrafico 15M 👇\nCHoCH + BOS + Strong + Order Block\n{status}"
-    return caption, path
-
-@app.route("/")
-def home(): return "Bot XAU SMC v4 VELAS - Live"
-@app.route("/send")
+@app.route('/send')
 def send():
-    try:
-        caption, path = generar_v4()
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-        with open(path, 'rb') as f:
-            r = requests.post(url, data={"chat_id": CHAT_ID, "caption": caption}, files={"photo": f}, timeout=60)
-        return r.json()
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return {"ok": False, "error": str(e)}, 500
+    # Control 8 señales por día
+    hoy = str(datetime.now().date())
+    data = get_contador()
+    if data["fecha"] != hoy:
+        data = {"fecha": hoy, "count": 0}
+    if data["count"] >= 8:
+        return "Limite 8 alcanzado"
+    
+    # Datos
+    m15 = yf.download("GC=F", period="2d", interval="15m", progress=False)
+    m5 = yf.download("GC=F", period="2d", interval="5m", progress=False)
+    m1 = yf.download("GC=F", period="1d", interval="1m", progress=False)
+    
+    if len(m1) < 30: return "Sin datos"
+    
+    precio = float(m1['Close'].iloc[-1])
+    tendencia_15m = "ALCISTA" if m15['Close'].iloc[-1] > m15['Close'].iloc[-20] else "BAJISTA"
+    choch_5m = m5['Close'].iloc[-1] > m5['High'].iloc[-10].max()
+    ob_1m = float(m1['Low'].iloc[-20:].min())
+    
+    # CONDICIÓN SNIPER: 15M + 5M + 1M
+    if not choch_5m: return f"Esperando CHOCH 5M - Tendencia {tendencia_15m}"
+    
+    sesion = get_session()
+    data["count"] += 1
+    direccion = "BUY" if tendencia_15m == "ALCISTA" else "SELL"
+    sl = ob_1m - 1 if direccion == "BUY" else ob_1m + 1
+    tp1 = precio + 5 if direccion == "BUY" else precio - 5
+    tp2 = precio + 10 if direccion == "BUY" else precio - 10
+    tp3 = precio + 20 if direccion == "BUY" else precio - 20
+    
+    # Gráfico
+    plt.figure(figsize=(8,4))
+    plt.plot(m1['Close'].tail(50), label='Precio 1M')
+    plt.axhline(ob_1m, color='green', linestyle='--', label=f'OB 1M {ob_1m:.2f}')
+    plt.axhline(precio, color='blue', label=f'Entrada {precio:.2f}')
+    plt.legend(); plt.title(f'XAUUSD {direccion} {sesion}')
+    plt.savefig('chart.png'); plt.close()
+    
+    mensaje = f"""
+{sesion} #{data["count"]}/8 | XAUUSD {direccion} 🔥
+
+📈 Tendencia 15M: {tendencia_15m} | BOS Roto
+🔍 Confirmación 5M: CHOCH {'ALCISTA' if direccion=='BUY' else 'BAJISTA'} + OB
+💥 Gatillo 1M: Retesteo + Vela Envolvente
+
+━━━━━━━━━━━━━━━
+🎯 Entrada: {precio:.2f}
+🛑 SL: {sl:.2f}
+✅ TP1: {tp1:.2f} (+5$)
+✅ TP2: {tp2:.2f} (+10$)
+✅ TP3: {tp3:.2f} (+20$) RUNNER
+━━━━━━━━━━━━━━━
+"""
+    # Enviar con foto
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+    with open('chart.png', 'rb') as foto:
+        requests.post(url, data={'chat_id': CHAT_ID, 'caption': mensaje}, files={'photo': foto})
+    
+    save_contador(data)
+    return f"Señal {data['count']}/8 enviada {sesion}"
+
+@app.route('/')
+def home(): return "Bot Sniper 15M-5M-1M Activo"
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
